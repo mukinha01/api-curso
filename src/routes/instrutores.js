@@ -1,59 +1,66 @@
 const express = require('express');
 
-function createInstrutoresRouter(db) {
+function createInstrutoresRouter(prisma) {
   const router = express.Router();
+  const includeCursos = { cursos: { select: { id: true, titulo: true, descricao: true } } };
 
-  router.post('/', (req, res) => {
+  router.post('/', async (req, res) => {
     const nome = req.body.nome?.trim();
     const email = req.body.email?.trim();
     if (!nome || !email) {
       return res.status(400).json({ erro: 'nome e email são obrigatórios.' });
     }
 
-    const result = db.prepare('INSERT INTO instrutor (nome, email) VALUES (?, ?)').run(nome, email);
-    const instrutor = db.prepare('SELECT id, nome, email FROM instrutor WHERE id = ?').get(result.lastInsertRowid);
-    return res.status(201).json({ ...instrutor, cursos: [] });
+    const instrutor = await prisma.instrutor.create({
+      data: { nome, email },
+      include: includeCursos,
+    });
+    return res.status(201).json(instrutor);
   });
 
-  router.get('/', (_req, res) => {
-    const instrutores = db.prepare('SELECT id, nome, email FROM instrutor ORDER BY id').all();
-    const cursos = db.prepare('SELECT id, titulo, descricao, instrutor_id FROM curso ORDER BY id').all();
-    const cursosPorInstrutor = new Map();
-    for (const curso of cursos) {
-      const { instrutor_id, ...dadosCurso } = curso;
-      if (!cursosPorInstrutor.has(instrutor_id)) cursosPorInstrutor.set(instrutor_id, []);
-      cursosPorInstrutor.get(instrutor_id).push(dadosCurso);
-    }
-    return res.json(instrutores.map((instrutor) => ({
-      ...instrutor,
-      cursos: cursosPorInstrutor.get(instrutor.id) || [],
-    })));
+  router.get('/', async (_req, res) => {
+    const instrutores = await prisma.instrutor.findMany({
+      orderBy: { id: 'asc' },
+      include: includeCursos,
+    });
+    return res.json(instrutores);
   });
 
-  router.get('/:id', (req, res) => {
-    const instrutor = db.prepare('SELECT id, nome, email FROM instrutor WHERE id = ?').get(req.params.id);
+  router.get('/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ erro: 'id deve ser um inteiro positivo.' });
+    const instrutor = await prisma.instrutor.findUnique({
+      where: { id },
+      include: includeCursos,
+    });
     if (!instrutor) return res.status(404).json({ erro: 'Instrutor não encontrado.' });
-    const cursos = db.prepare('SELECT id, titulo, descricao FROM curso WHERE instrutor_id = ? ORDER BY id').all(instrutor.id);
-    return res.json({ ...instrutor, cursos });
+    return res.json(instrutor);
   });
 
-  router.put('/:id', (req, res) => {
+  router.put('/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ erro: 'id deve ser um inteiro positivo.' });
     const nome = req.body.nome?.trim();
     const email = req.body.email?.trim();
     if (!nome || !email) {
       return res.status(400).json({ erro: 'nome e email são obrigatórios.' });
     }
 
-    const result = db.prepare('UPDATE instrutor SET nome = ?, email = ? WHERE id = ?').run(nome, email, req.params.id);
-    if (result.changes === 0) return res.status(404).json({ erro: 'Instrutor não encontrado.' });
-    const instrutor = db.prepare('SELECT id, nome, email FROM instrutor WHERE id = ?').get(req.params.id);
-    const cursos = db.prepare('SELECT id, titulo, descricao FROM curso WHERE instrutor_id = ? ORDER BY id').all(instrutor.id);
-    return res.json({ ...instrutor, cursos });
+    const existente = await prisma.instrutor.findUnique({ where: { id } });
+    if (!existente) return res.status(404).json({ erro: 'Instrutor não encontrado.' });
+    const instrutor = await prisma.instrutor.update({
+      where: { id },
+      data: { nome, email },
+      include: includeCursos,
+    });
+    return res.json(instrutor);
   });
 
-  router.delete('/:id', (req, res) => {
-    const result = db.prepare('DELETE FROM instrutor WHERE id = ?').run(req.params.id);
-    if (result.changes === 0) return res.status(404).json({ erro: 'Instrutor não encontrado.' });
+  router.delete('/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ erro: 'id deve ser um inteiro positivo.' });
+    const result = await prisma.instrutor.deleteMany({ where: { id } });
+    if (result.count === 0) return res.status(404).json({ erro: 'Instrutor não encontrado.' });
     return res.status(204).end();
   });
 

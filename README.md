@@ -1,6 +1,6 @@
 # API de Instrutores e Cursos
 
-API REST construída com Node.js, Express e SQLite. Os cursos pertencem a um instrutor; ao excluir um instrutor, seus cursos também são excluídos.
+API REST construída com Node.js, Express, Prisma ORM e SQLite. Os cursos pertencem a um instrutor; ao excluir um instrutor, seus cursos também são excluídos.
 
 ## Requisitos
 
@@ -11,10 +11,11 @@ API REST construída com Node.js, Express e SQLite. Os cursos pertencem a um ins
 
 ```bash
 npm install
+npm run db:migrate
 npm start
 ```
 
-A API ficará disponível em `http://localhost:3000`. Para escolher outra porta ou arquivo SQLite, configure `PORT` ou `DATABASE_FILE` antes de iniciar.
+A API ficará disponível em `http://localhost:3000`. Para escolher outra porta ou arquivo SQLite, configure `PORT` ou `DATABASE_URL`. Use `.env.example` como referência para a configuração local.
 
 ## Rotas
 

@@ -1,31 +1,20 @@
 const express = require('express');
 
-function createCursosRouter(db) {
+function createCursosRouter(prisma) {
   const router = express.Router();
-  const cursoSelect = `
-    SELECT curso.id, curso.titulo, curso.descricao, curso.instrutor_id,
-           instrutor.id AS instrutor_detalhe_id,
-           instrutor.nome AS instrutor_nome,
-           instrutor.email AS instrutor_email
-    FROM curso
-    JOIN instrutor ON instrutor.id = curso.instrutor_id
-  `;
+  const includeInstrutor = { instrutor: { select: { id: true, nome: true, email: true } } };
 
   function formatarCurso(curso) {
     return {
       id: curso.id,
       titulo: curso.titulo,
       descricao: curso.descricao,
-      instrutor_id: curso.instrutor_id,
-      instrutor: {
-        id: curso.instrutor_detalhe_id,
-        nome: curso.instrutor_nome,
-        email: curso.instrutor_email,
-      },
+      instrutor_id: curso.instrutorId,
+      instrutor: curso.instrutor,
     };
   }
 
-  router.post('/', (req, res) => {
+  router.post('/', async (req, res) => {
     const titulo = req.body.titulo?.trim();
     const descricao = req.body.descricao?.trim();
     const instrutorId = Number(req.body.instrutor_id);
@@ -33,24 +22,37 @@ function createCursosRouter(db) {
       return res.status(400).json({ erro: 'titulo, descricao e instrutor_id válido são obrigatórios.' });
     }
 
-    const result = db.prepare('INSERT INTO curso (titulo, descricao, instrutor_id) VALUES (?, ?, ?)')
-      .run(titulo, descricao, instrutorId);
-    const curso = db.prepare(`${cursoSelect} WHERE curso.id = ?`).get(result.lastInsertRowid);
+    const instrutor = await prisma.instrutor.findUnique({ where: { id: instrutorId } });
+    if (!instrutor) return res.status(400).json({ erro: 'instrutor_id não corresponde a um instrutor existente.' });
+    const curso = await prisma.curso.create({
+      data: { titulo, descricao, instrutor: { connect: { id: instrutorId } } },
+      include: includeInstrutor,
+    });
     return res.status(201).json(formatarCurso(curso));
   });
 
-  router.get('/', (_req, res) => {
-    const cursos = db.prepare(`${cursoSelect} ORDER BY curso.id`).all();
+  router.get('/', async (_req, res) => {
+    const cursos = await prisma.curso.findMany({
+      orderBy: { id: 'asc' },
+      include: includeInstrutor,
+    });
     return res.json(cursos.map(formatarCurso));
   });
 
-  router.get('/:id', (req, res) => {
-    const curso = db.prepare(`${cursoSelect} WHERE curso.id = ?`).get(req.params.id);
+  router.get('/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ erro: 'id deve ser um inteiro positivo.' });
+    const curso = await prisma.curso.findUnique({
+      where: { id },
+      include: includeInstrutor,
+    });
     if (!curso) return res.status(404).json({ erro: 'Curso não encontrado.' });
     return res.json(formatarCurso(curso));
   });
 
-  router.put('/:id', (req, res) => {
+  router.put('/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ erro: 'id deve ser um inteiro positivo.' });
     const titulo = req.body.titulo?.trim();
     const descricao = req.body.descricao?.trim();
     const instrutorId = Number(req.body.instrutor_id);
@@ -58,16 +60,23 @@ function createCursosRouter(db) {
       return res.status(400).json({ erro: 'titulo, descricao e instrutor_id válido são obrigatórios.' });
     }
 
-    const result = db.prepare('UPDATE curso SET titulo = ?, descricao = ?, instrutor_id = ? WHERE id = ?')
-      .run(titulo, descricao, instrutorId, req.params.id);
-    if (result.changes === 0) return res.status(404).json({ erro: 'Curso não encontrado.' });
-    const curso = db.prepare(`${cursoSelect} WHERE curso.id = ?`).get(req.params.id);
+    const existente = await prisma.curso.findUnique({ where: { id } });
+    if (!existente) return res.status(404).json({ erro: 'Curso não encontrado.' });
+    const instrutor = await prisma.instrutor.findUnique({ where: { id: instrutorId } });
+    if (!instrutor) return res.status(400).json({ erro: 'instrutor_id não corresponde a um instrutor existente.' });
+    const curso = await prisma.curso.update({
+      where: { id },
+      data: { titulo, descricao, instrutor: { connect: { id: instrutorId } } },
+      include: includeInstrutor,
+    });
     return res.json(formatarCurso(curso));
   });
 
-  router.delete('/:id', (req, res) => {
-    const result = db.prepare('DELETE FROM curso WHERE id = ?').run(req.params.id);
-    if (result.changes === 0) return res.status(404).json({ erro: 'Curso não encontrado.' });
+  router.delete('/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ erro: 'id deve ser um inteiro positivo.' });
+    const result = await prisma.curso.deleteMany({ where: { id } });
+    if (result.count === 0) return res.status(404).json({ erro: 'Curso não encontrado.' });
     return res.status(204).end();
   });
 

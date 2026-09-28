@@ -1,15 +1,24 @@
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const { mkdtempSync, rmSync } = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { createApp } = require('../src/app');
-const { createDatabase } = require('../src/database');
+const { createPrismaClient } = require('../src/database');
 
 test('gerencia instrutores e cursos com vínculo relacional', async (t) => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'api-cursos-'));
-  const db = createDatabase(path.join(directory, 'test.sqlite'));
-  const server = createApp(db).listen(0);
+  const databaseUrl = `file:${path.join(directory, 'test.sqlite').replace(/\\/g, '/')}`;
+  const projectDirectory = path.join(__dirname, '..');
+  const prismaCli = path.join(projectDirectory, 'node_modules', 'prisma', 'build', 'index.js');
+  execFileSync(process.execPath, [prismaCli, 'migrate', 'deploy'], {
+    cwd: projectDirectory,
+    env: { ...process.env, DATABASE_URL: databaseUrl },
+    stdio: 'pipe',
+  });
+  const prisma = createPrismaClient({ datasources: { db: { url: databaseUrl } } });
+  const server = createApp(prisma).listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   const request = async (url, options) => {
@@ -19,7 +28,7 @@ test('gerencia instrutores e cursos com vínculo relacional', async (t) => {
 
   t.after(async () => {
     await new Promise((resolve) => server.close(resolve));
-    db.close();
+    await prisma.$disconnect();
     rmSync(directory, { recursive: true, force: true });
   });
 
